@@ -2,27 +2,30 @@
   "settings": {
     "index.refresh_interval": "5s",
     "number_of_shards" : "1",
-    "number_of_replicas": "0",
-    "dynamic": false
-  },
-  "analysis": {
-    "analyzer": {
-      "std_english": { 
-        "type":      "standard",
-        "stopwords": "_english_"
-      }
-    }
-  },
-  "mappings": {
+    "number_of_replicas": "0"
+  }
+  ,"mappings" : {
     "properties" : {
       "@timestamp" : {
         "type" : "date"
       },
       "@version" : {
-        "type" : "integer"
+        "type" : "text",
+        "fields" : {
+          "keyword" : {
+            "type" : "keyword",
+            "ignore_above" : 256
+          }
+        }
       },
       "category" : {
-        "type" : "keyword"
+        "type" : "text",
+        "fields" : {
+          "keyword" : {
+            "type" : "keyword",
+            "ignore_above" : 256
+          }
+        }
       },
       "click_time" : {
         "type" : "date"
@@ -43,7 +46,13 @@
         "type" : "integer"
       },
       "user" : {
-        "type" : "keyword"
+        "type" : "text",
+        "fields" : {
+          "keyword" : {
+            "type" : "keyword",
+            "ignore_above" : 256
+          }
+        }
       }
     }
   }
