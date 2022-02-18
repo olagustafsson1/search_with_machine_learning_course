@@ -190,7 +190,7 @@
         "type" : "boolean"
       },
       "productId" : {
-        "type" : "integer"
+        "type" : "keyword"
       },
       "quantityLimit" : {
         "type" : "integer"
@@ -241,7 +241,7 @@
         }
       },
       "sku" : {
-        "type" : "integer"
+        "type" : "keyword"
       },
       "startDate" : {
         "type" : "date"
@@ -286,10 +286,10 @@
         }
       },
       "weight" : {
-        "type" : "float"
+        "type" : "keyword"
       },
       "width" : {
-        "type" : "float"
+        "type" : "keyword"
       }
     }
   }
