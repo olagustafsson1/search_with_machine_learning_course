@@ -4,6 +4,7 @@
 from flask import (
     Blueprint, redirect, render_template, request, url_for
 )
+import json
 
 from week1.opensearch import get_opensearch
 
@@ -74,7 +75,10 @@ def query():
         query_obj = create_query("*", [], sort, sortDir)
 
     print("query obj: {}".format(query_obj))
-    response = None   # TODO: Replace me with an appropriate call to OpenSearch
+
+    # Replace me with an appropriate call to OpenSearch
+
+    response = opensearch.search(index='bbuy_products', body=query_obj)
     # Postprocess results here if you so desire
 
     #print(response)
@@ -91,10 +95,31 @@ def create_query(user_query, filters, sort="_score", sortDir="desc"):
     query_obj = {
         'size': 10,
         "query": {
-            "match_all": {} # Replace me with a query that both searches and filters
+            "bool": {
+            "filter": [
+                            {
+                                "term": {
+                                    "inStoreAvailability": True
+                                }
+                            }
+                        ],
+            "must": [
+                        {
+                        "query_string": {
+                            "query": user_query,
+                            "fields": [
+                            "name^100",
+                            "shortDescription^50",
+                            "longDescription^10",
+                            "department"
+                            ]
+                        }
+                    }
+                ]
+            }
         },
         "aggs": {
             #TODO: FILL ME IN
-        }
+        }, "_source": ["productId", "name", "image", "description"]
     }
     return query_obj

@@ -95,6 +95,7 @@
       },
       "description" : {
         "type" : "text",
+        "analyzer": "english",
         "fields" : {
           "keyword" : {
             "type" : "keyword",
@@ -107,6 +108,7 @@
       },
       "features" : {
         "type" : "text",
+        "analyzer": "english",
         "fields" : {
           "keyword" : {
             "type" : "keyword",
@@ -140,6 +142,7 @@
       },
       "longDescription" : {
         "type" : "text",
+        "analyzer": "english",
         "fields" : {
           "keyword" : {
             "type" : "keyword",
@@ -176,6 +179,7 @@
       },
       "name" : {
         "type" : "text",
+        "analyzer": "english",
         "fields" : {
           "keyword" : {
             "type" : "keyword",
@@ -224,6 +228,7 @@
       },
       "shortDescription" : {
         "type" : "text",
+        "analyzer": "english",
         "fields" : {
           "keyword" : {
             "type" : "keyword",
