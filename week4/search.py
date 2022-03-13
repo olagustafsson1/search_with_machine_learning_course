@@ -1,16 +1,19 @@
 #
 # The main search hooks for the Search Flask application.
 #
-from flask import (
-    Blueprint, redirect, render_template, request, url_for, current_app
-)
+from flask import Blueprint, redirect, render_template, request, url_for, current_app
 
 from week4.opensearch import get_opensearch
+from itertools import accumulate
+import numpy as np
+
+from nltk.stem import *
+stemmer = PorterStemmer()
 
 import week4.utilities.query_utils as qu
 import week4.utilities.ltr_utils as lu
 
-bp = Blueprint('search', __name__, url_prefix='/search')
+bp = Blueprint("search", __name__, url_prefix="/search")
 
 
 # Process the filters requested by the user and return a tuple that is appropriate for use in: the query, URLs displaying the filter and the display of the applied filters
@@ -20,13 +23,16 @@ bp = Blueprint('search', __name__, url_prefix='/search')
 def process_filters(filters_input):
     # Filters look like: &filter.name=regularPrice&regularPrice.key={{ agg.key }}&regularPrice.from={{ agg.from }}&regularPrice.to={{ agg.to }}
     filters = []
-    display_filters = []  # Also create the text we will use to display the filters that are applied
+    display_filters = (
+        []
+    )  # Also create the text we will use to display the filters that are applied
     applied_filters = ""
     for filter in filters_input:
         type = request.args.get(filter + ".type")
         display_name = request.args.get(filter + ".displayName", filter)
-        applied_filters += "&filter.name={}&{}.type={}&{}.displayName={}".format(filter, filter, type, filter,
-                                                                                 display_name)
+        applied_filters += "&filter.name={}&{}.type={}&{}.displayName={}".format(
+            filter, filter, type, filter, display_name
+        )
         if type == "range":
             from_val = request.args.get(filter + ".from", None)
             to_val = request.args.get(filter + ".to", None)
@@ -43,25 +49,66 @@ def process_filters(filters_input):
                 to_val = "*"  # set it to * for display purposes, but don't use it in the query
             the_filter = {"range": {filter: to_from}}
             filters.append(the_filter)
-            display_filters.append("{}: {} TO {}".format(display_name, from_val, to_val))
-            applied_filters += "&{}.from={}&{}.to={}".format(filter, from_val, filter, to_val)
+            display_filters.append(
+                "{}: {} TO {}".format(display_name, from_val, to_val)
+            )
+            applied_filters += "&{}.from={}&{}.to={}".format(
+                filter, from_val, filter, to_val
+            )
         elif type == "terms":
             field = request.args.get(filter + ".fieldName", filter)
             key = request.args.get(filter + ".key", None)
             the_filter = {"term": {field: key}}
             filters.append(the_filter)
             display_filters.append("{}: {}".format(display_name, key))
-            applied_filters += "&{}.fieldName={}&{}.key={}".format(filter, field, filter, key)
+            applied_filters += "&{}.fieldName={}&{}.key={}".format(
+                filter, field, filter, key
+            )
     print("Filters: {}".format(filters))
 
     return filters, display_filters, applied_filters
 
+
+def normalize_text(input_text, stemming=True):
+
+    input_text = stemmer.stem(input_text)
+
+    # Only retain lowercase letters, digits and spaces
+    processed = ''.join([i.lower() for i in input_text if (i.isalpha() or i.isnumeric() or i==' ')])
+
+    # Removing multiple spaces in sequence
+    processed = ' '.join(processed.split())
+    
+    return processed
+
+
 def get_query_category(user_query, query_class_model):
-    print("IMPLEMENT ME: get_query_category")
-    return None
+    #print("IMPLEMENT ME: get_query_category")
+
+    num_predictions = 10
+    acc_probability = 0.5
+    min_probability = 0.1
+    
+    # Prepare the text for predictions
+    input_text = stemmer.stem(user_query)
+    input_text = ''.join([i.lower() for i in input_text if (i.isalpha() or i.isnumeric() or i==' ')])
+    input_text = ' '.join(input_text.split())
+    print(f"Processed query text for prediction is {input_text}")
+
+    # Get the actual predictions from the model
+    predictions = query_class_model.predict(input_text, k=num_predictions)
+    predictions = predictions + (np.array(list(accumulate(predictions[1]))),)
+    predictions = [i for i in list(zip(*predictions)) if i[1]>=min_probability and i[2]>=acc_probability]
+    print(predictions)
+
+    terms = [a[0][9:] for a in predictions]
+
+    if len(terms)>0:
+        print(f"Filter terms are {terms}")
+        return terms
 
 
-@bp.route('/query', methods=['GET', 'POST'])
+@bp.route("/query", methods=["GET", "POST"])
 def query():
     opensearch = get_opensearch()
     # Put in your code to query opensearch.  Set error as appropriate.
@@ -78,8 +125,8 @@ def query():
     ltr_store_name = "week2"
     ltr_model_name = "ltr_model"
     explain = False
-    if request.method == 'POST':  # a query has been submitted
-        user_query = request.form['query']
+    if request.method == "POST":  # a query has been submitted
+        user_query = request.form["query"]
         if not user_query:
             user_query = "*"
         sort = request.form["sort"]
@@ -95,22 +142,46 @@ def query():
         click_prior = get_click_prior(user_query)
 
         if model == "simple_LTR":
-            query_obj = qu.create_simple_baseline(user_query, click_prior, [], sort, sortDir, size=500)  # We moved create_query to a utility class so we could use it elsewhere.
-            query_obj = lu.create_rescore_ltr_query(user_query, query_obj, click_prior, ltr_model_name, ltr_store_name,
-                                                    rescore_size=500, main_query_weight=0)
+            query_obj = qu.create_simple_baseline(
+                user_query, click_prior, [], sort, sortDir, size=500
+            )  # We moved create_query to a utility class so we could use it elsewhere.
+            query_obj = lu.create_rescore_ltr_query(
+                user_query,
+                query_obj,
+                click_prior,
+                ltr_model_name,
+                ltr_store_name,
+                rescore_size=500,
+                main_query_weight=0,
+            )
             print("Simple LTR q: %s" % query_obj)
         elif model == "ht_LTR":
-            query_obj = qu.create_query(user_query, click_prior, [], sort, sortDir, size=500)  # We moved create_query to a utility class so we could use it elsewhere.
-            query_obj = lu.create_rescore_ltr_query(user_query, query_obj, click_prior, ltr_model_name, ltr_store_name,
-                                                    rescore_size=500, main_query_weight=0)
+            query_obj = qu.create_query(
+                user_query, click_prior, [], sort, sortDir, size=500
+            )  # We moved create_query to a utility class so we could use it elsewhere.
+            query_obj = lu.create_rescore_ltr_query(
+                user_query,
+                query_obj,
+                click_prior,
+                ltr_model_name,
+                ltr_store_name,
+                rescore_size=500,
+                main_query_weight=0,
+            )
             print("LTR q: %s" % query_obj)
         elif model == "hand_tuned":
-            query_obj = qu.create_query(user_query, click_prior, [], sort, sortDir, size=100)  # We moved create_query to a utility class so we could use it elsewhere.
+            query_obj = qu.create_query(
+                user_query, click_prior, [], sort, sortDir, size=100
+            )  # We moved create_query to a utility class so we could use it elsewhere.
             print("Hand tuned q: %s" % query_obj)
         else:
-            query_obj = qu.create_simple_baseline(user_query, click_prior, [], sort, sortDir, size=100)  # We moved create_query to a utility class so we could use it elsewhere.
+            query_obj = qu.create_simple_baseline(
+                user_query, click_prior, [], sort, sortDir, size=100
+            )  # We moved create_query to a utility class so we could use it elsewhere.
             print("Plain ol q: %s" % query_obj)
-    elif request.method == 'GET':  # Handle the case where there is no query or just loading the page
+    elif (
+        request.method == "GET"
+    ):  # Handle the case where there is no query or just loading the page
         user_query = request.args.get("query", "*")
         filters_input = request.args.getlist("filter.name")
         sort = request.args.get("sort", sort)
@@ -123,31 +194,69 @@ def query():
             (filters, display_filters, applied_filters) = process_filters(filters_input)
         model = request.args.get("model", "simiple")
         if model == "simple_LTR":
-            query_obj = qu.create_simple_baseline(user_query, click_prior, filters, sort, sortDir, size=500)
-            query_obj = lu.create_rescore_ltr_query(user_query, query_obj, click_prior, ltr_model_name, ltr_store_name, rescore_size=500)
+            query_obj = qu.create_simple_baseline(
+                user_query, click_prior, filters, sort, sortDir, size=500
+            )
+            query_obj = lu.create_rescore_ltr_query(
+                user_query,
+                query_obj,
+                click_prior,
+                ltr_model_name,
+                ltr_store_name,
+                rescore_size=500,
+            )
         elif model == "ht_LTR":
-            query_obj = qu.create_query(user_query, click_prior, filters, sort, sortDir, size=100)
-            query_obj = lu.create_rescore_ltr_query(user_query, query_obj, click_prior, ltr_model_name, ltr_store_name, rescore_size=100)
+            query_obj = qu.create_query(
+                user_query, click_prior, filters, sort, sortDir, size=100
+            )
+            query_obj = lu.create_rescore_ltr_query(
+                user_query,
+                query_obj,
+                click_prior,
+                ltr_model_name,
+                ltr_store_name,
+                rescore_size=100,
+            )
         elif model == "hand_tuned":
-            query_obj = qu.create_query(user_query, click_prior, filters, sort, sortDir, size=100)
+            query_obj = qu.create_query(
+                user_query, click_prior, filters, sort, sortDir, size=100
+            )
         else:
-            query_obj = qu.create_simple_baseline(user_query, click_prior, filters, sort, sortDir, size=100)
+            query_obj = qu.create_simple_baseline(
+                user_query, click_prior, filters, sort, sortDir, size=100
+            )
     else:
         query_obj = qu.create_query("*", "", [], sort, sortDir, size=100)
 
     query_class_model = current_app.config["query_model"]
     query_category = get_query_category(user_query, query_class_model)
+    print(f"The category predictions are {query_category}")
     if query_category is not None:
-        print("IMPLEMENT ME: add this into the filters object so that it gets applied at search time.  This should look like your `term` filter from week 1 for department but for categories instead")
-    #print("query obj: {}".format(query_obj))
-    response = opensearch.search(body=query_obj, index=current_app.config["index_name"], explain=explain)
+        query_obj["query"]["bool"]["filter"] = [{
+            "terms": {
+                "categoryPathIds.keyword": query_category
+            }
+        }]
+    print("query obj: {}".format(query_obj))
+    response = opensearch.search(
+        body=query_obj, index=current_app.config["index_name"], explain=explain
+    )
     # Postprocess results here if you so desire
 
-    #print(response)
+    # print(response)
     if error is None:
-        return render_template("search_results.jinja2", query=user_query, search_response=response,
-                               display_filters=display_filters, applied_filters=applied_filters,
-                               sort=sort, sortDir=sortDir, model=model, explain=explain, query_category=query_category)
+        return render_template(
+            "search_results.jinja2",
+            query=user_query,
+            search_response=response,
+            display_filters=display_filters,
+            applied_filters=applied_filters,
+            sort=sort,
+            sortDir=sortDir,
+            model=model,
+            explain=explain,
+            query_category=query_category,
+        )
     else:
         redirect(url_for("index"))
 
@@ -160,16 +269,20 @@ def get_click_prior(user_query):
             prior_doc_id_weights = None
             query_times_seen = 0  # careful here
             prior_clicks_for_query = None
-            prior_clicks_for_query = current_app.config["priors_gb"].get_group(user_query)
+            prior_clicks_for_query = current_app.config["priors_gb"].get_group(
+                user_query
+            )
             if prior_clicks_for_query is not None and len(prior_clicks_for_query) > 0:
                 prior_doc_ids = prior_clicks_for_query.sku.drop_duplicates()
-                prior_doc_id_weights = prior_clicks_for_query.sku.value_counts()  # histogram gives us the click counts for all the doc_ids
+                prior_doc_id_weights = (
+                    prior_clicks_for_query.sku.value_counts()
+                )  # histogram gives us the click counts for all the doc_ids
                 query_times_seen = prior_clicks_for_query.sku.count()
-                click_prior = qu.create_prior_queries(prior_doc_ids, prior_doc_id_weights, query_times_seen)
+                click_prior = qu.create_prior_queries(
+                    prior_doc_ids, prior_doc_id_weights, query_times_seen
+                )
         except KeyError as ke:
             pass
             # nothing to do here, we just haven't seen this query before in our training set
     print("prior: %s" % click_prior)
     return click_prior
-
-
